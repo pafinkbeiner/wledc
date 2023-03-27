@@ -1,5 +1,7 @@
+use std::result;
+
 use clap::{Parser, Subcommand};
-use rusqlite::{Connection, Result};
+use rusqlite::{params, Connection, Result};
 
 #[derive(Debug)]
 struct WLED {
@@ -66,12 +68,12 @@ fn main() -> Result<()> {
 
     let conn = Connection::open("wled.db")?;
     // create db of it doen´t exists
-    let creation_result = create_db_if_not_exist(&conn);
+    let _ = create_db_if_not_exist(&conn);
 
     // handle ls
     if let true = args.ls {
         println!("list wled instances");
-        list_wled_instances(&conn);
+        let _ = list_wled_instances(&conn);
         return Ok(());
     }
 
@@ -79,66 +81,117 @@ fn main() -> Result<()> {
     if let Some(commands) = args.command {
         match commands {
             Commands::Add { ip, name } => {
-                let wled = WLED {ip, name};
-                let ret = add_wled_instances(&conn, &wled);
-                println!("return: {:#?}", ret);
-                return Ok(());
-            },
+                let wled = WLED { ip, name };
+                add_wled_instances(&conn, &wled)
+            }
             Commands::Remove { ip, name } => delete_wled_instances(&conn, ip, name),
-            Commands::Enable { ip, name } => todo!(),
+            Commands::Enable { ip, name } => enable_wled_instance(&conn, ip, name),
             Commands::Disable { ip, name } => todo!(),
         }
-    }else{
+    } else {
         println!("No command provided");
         return Ok(());
     }
 }
 
-fn create_db_if_not_exist(conn: &Connection) -> Result<(), rusqlite::Error>{
+fn create_db_if_not_exist(conn: &Connection) -> Result<(), rusqlite::Error> {
     let query = "CREATE TABLE IF NOT EXISTS WLED (ip STRING, name STRING)";
     conn.execute(query, ())?;
     Ok(())
 }
 
-fn list_wled_instances(conn: &Connection) -> Result<(), rusqlite::Error>{
+fn list_wled_instances(conn: &Connection) -> Result<(), rusqlite::Error> {
     let mut stmt = conn.prepare("SELECT * FROM WLED")?;
     let wled_instances = stmt.query_map((), |row| {
         Ok(WLED {
-            name: row.get(0)?,
-            ip: row.get(1)?,
+            ip: row.get(0)?,
+            name: row.get(1)?,
         })
     })?;
-    for wled_instance in wled_instances{
+    for wled_instance in wled_instances {
         if let Ok(i) = wled_instance {
             println!("{:?}", i);
-        }else{
+        } else {
             println!("Error fetching WLED instance");
         }
     }
     Ok(())
 }
 
-fn add_wled_instances(conn: &Connection, wled: &WLED) -> Result<usize, rusqlite::Error>{
-    conn.execute("INSERT INTO WLED (ip, name) VALUES (?1, ?2)", &[&wled.ip, &wled.name])
+fn add_wled_instances(conn: &Connection, wled: &WLED) -> Result<()> {
+    match conn.execute(
+        "INSERT INTO WLED (ip, name) VALUES (?1, ?2)",
+        (&wled.ip, &wled.name),
+    ) {
+        Ok(_) => Ok(()),
+        Err(_) => todo!(),
+    }
 }
 
-fn delete_wled_instances(conn: &Connection, ip: Option<String>, name: Option<String>) -> Result<()>{
+fn delete_wled_instances(
+    conn: &Connection,
+    ip: Option<String>,
+    name: Option<String>,
+) -> Result<()> {
     match ip {
         Some(ip) => {
-            conn.execute("DELETE FROM WLED WHERE ip LIKE '?1'", &[&ip])?;
+            if ip == "*" {
+                let _ = drop_wled_instances(&conn);
+            } else {
+                let result = conn.execute("DELETE FROM WLED WHERE ip LIKE ?1", params![&ip])?;
+                println!("{}", result);
+            }
             Ok(())
-        },
+        }
         None => match name {
             Some(name) => {
-                conn.execute("DELETE FROM WLED WHERE name LIKE '?1'", &[&name])?;
+                if name == "*" {
+                    let _ = drop_wled_instances(&conn);
+                } else {
+                    let result =
+                        conn.execute("DELETE FROM WLED WHERE name LIKE ?1", params![&name])?;
+                    println!("{}", result);
+                }
                 Ok(())
-            },
+            }
             None => {
                 println!("No params provided!");
-                return Ok(())
-            },
+                return Ok(());
+            }
         },
     }
 }
 
+fn drop_wled_instances(conn: &Connection) {
+    let _ = conn.execute("DROP TABLE WLED", ());
+}
 
+fn enable_wled_instance(conn: &Connection, ip: Option<String>, name: Option<String>) -> Result<()> {
+    // todo get instances directly through sql statement
+    let mut stmt = conn.prepare("SELECT * FROM WLED")?;
+    let wled_instances = stmt.query_map((), |row| {
+        Ok(WLED {
+            ip: row.get(0)?,
+            name: row.get(1)?,
+        })
+    })?;
+    for wled_instance in wled_instances {
+        if let Ok(wled) = wled_instance {
+            if let Some(ip) = &ip {
+                if &wled.ip == ip {
+                    // found IP
+                    println!("Found IP: {:?}", ip);
+                    let result = reqwest::get(format!("http://{}", &wled.ip));
+                }
+            }else if let Some(name) = &name {
+                if &wled.name == name {
+                    // found name
+                    println!("Found Name: {:?}", name);
+                }
+            }
+        }
+    }
+    Ok(())
+}
+
+fn disable_wled_instance(conn: &Connection, ip: Option<String>, name: Option<String>) {}
