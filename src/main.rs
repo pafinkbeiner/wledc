@@ -64,7 +64,6 @@ enum Commands {
 
 fn main() -> Result<()> {
     let args = Args::parse();
-    println!("{:?}", args);
 
     let conn = Connection::open("wled.db")?;
     // create db of it doen´t exists
