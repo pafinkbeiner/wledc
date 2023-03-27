@@ -1,6 +1,5 @@
 use serde_json::json;
 use clap::{Parser, Subcommand};
-use reqwest::Client;
 use rusqlite::{params, Connection, Result};
 
 #[derive(Debug)]
