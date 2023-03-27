@@ -1,6 +1,6 @@
-use std::result;
-
+use serde_json::json;
 use clap::{Parser, Subcommand};
+use reqwest::Client;
 use rusqlite::{params, Connection, Result};
 
 #[derive(Debug)]
@@ -86,7 +86,7 @@ fn main() -> Result<()> {
             }
             Commands::Remove { ip, name } => delete_wled_instances(&conn, ip, name),
             Commands::Enable { ip, name } => enable_wled_instance(&conn, ip, name),
-            Commands::Disable { ip, name } => todo!(),
+            Commands::Disable { ip, name } => disable_wled_instance(&conn, ip, name),
         }
     } else {
         println!("No command provided");
@@ -175,18 +175,16 @@ fn enable_wled_instance(conn: &Connection, ip: Option<String>, name: Option<Stri
             name: row.get(1)?,
         })
     })?;
+    let rest_client = reqwest::blocking::Client::new();
     for wled_instance in wled_instances {
         if let Ok(wled) = wled_instance {
             if let Some(ip) = &ip {
                 if &wled.ip == ip {
-                    // found IP
-                    println!("Found IP: {:?}", ip);
-                    let result = reqwest::get(format!("http://{}", &wled.ip));
+                    let _ = rest_client.post(format!("http://{}/json", &wled.ip)).json(&json!({"on": true})).send();
                 }
             }else if let Some(name) = &name {
                 if &wled.name == name {
-                    // found name
-                    println!("Found Name: {:?}", name);
+                    let _ = rest_client.post(format!("http://{}/json", &wled.ip)).json(&json!({"on": true})).send();
                 }
             }
         }
@@ -194,4 +192,28 @@ fn enable_wled_instance(conn: &Connection, ip: Option<String>, name: Option<Stri
     Ok(())
 }
 
-fn disable_wled_instance(conn: &Connection, ip: Option<String>, name: Option<String>) {}
+fn disable_wled_instance(conn: &Connection, ip: Option<String>, name: Option<String>) -> Result<()> {
+        // todo get instances directly through sql statement
+        let mut stmt = conn.prepare("SELECT * FROM WLED")?;
+        let wled_instances = stmt.query_map((), |row| {
+            Ok(WLED {
+                ip: row.get(0)?,
+                name: row.get(1)?,
+            })
+        })?;
+        let rest_client = reqwest::blocking::Client::new();
+        for wled_instance in wled_instances {
+            if let Ok(wled) = wled_instance {
+                if let Some(ip) = &ip {
+                    if &wled.ip == ip {
+                        let _ = rest_client.post(format!("http://{}/json", &wled.ip)).json(&json!({"on": false})).send();
+                    }
+                }else if let Some(name) = &name {
+                    if &wled.name == name {
+                        let _ = rest_client.post(format!("http://{}/json", &wled.ip)).json(&json!({"on": false})).send();
+                    }
+                }
+            }
+        }
+        Ok(())
+}
